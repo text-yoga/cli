@@ -1,0 +1,46 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'text-yoga-cli'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--features=metal",
+                    "--bin=text-yoga-cli",
+                    "--package=text-yoga-cli"
+                ],
+                "filter": {
+                    "name": "text-yoga-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'text-yoga-cli'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=text-yoga-cli",
+                    "--package=text-yoga-cli"
+                ],
+                "filter": {
+                    "name": "text-yoga-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
