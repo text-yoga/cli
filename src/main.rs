@@ -14,8 +14,11 @@ use candle_core::{
 use candle_nn::VarBuilder;
 use clap::Parser;
 use hf_hub::api::tokio::ApiBuilder;
+use human_panic::setup_panic;
 use itertools::{Either, Itertools};
 use jina_bert::BertModel;
+use markdown;
+use thiserror::Error;
 use tokenizers::Tokenizer;
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{fmt, Registry};
@@ -40,6 +43,12 @@ struct Args {
 
     #[arg(long)]
     model: Option<String>,
+}
+
+#[derive(Error, Debug)]
+pub enum ProcessError {
+    #[error("Failed to parse markdown: {0}")]
+    InvalidMarkdown(String),
 }
 
 impl Args {
@@ -169,6 +178,12 @@ fn embed(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_panic!(Metadata {
+        name: env!("CARGO_PKG_NAME").into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        authors: "Jan Schulte".into(),
+        homepage: "https://github.com/text-yoga/cli/issues".into(),
+    });
     // use tracing_chrome::ChromeLayerBuilder;
     use tracing_subscriber::prelude::*;
 
@@ -194,23 +209,29 @@ async fn main() -> anyhow::Result<()> {
     };
     let start = std::time::Instant::now();
 
-    let (model, mut tokenizer) = args.build_model_and_tokenizer().await?;
+    println!(
+        "{:?}",
+        markdown::to_mdast("# Hey, *you*!", &markdown::ParseOptions::default())
+            .map_err(ProcessError::InvalidMarkdown)?
+    );
 
-    let sentences = [
-        "The cat sits outside",
-        "A man is playing guitar",
-        "I love pasta",
-        "The new movie is awesome",
-        "The cat plays in the garden",
-        "A woman watches TV",
-        "The new movie is so great",
-        "Do you like pizza?",
-    ]
-    .map(String::from)
-    .to_vec();
+    // let (model, mut tokenizer) = args.build_model_and_tokenizer().await?;
 
-    let result = embed(&model, &mut tokenizer, false, sentences);
-    println!("Result: {:#?}", result);
+    // let sentences = [
+    //     "The cat sits outside",
+    //     "A man is playing guitar",
+    //     "I love pasta",
+    //     "The new movie is awesome",
+    //     "The cat plays in the garden",
+    //     "A woman watches TV",
+    //     "The new movie is so great",
+    //     "Do you like pizza?",
+    // ]
+    // .map(String::from)
+    // .to_vec();
+
+    // let result = embed(&model, &mut tokenizer, false, sentences);
+    // println!("Result: {:#?}", result);
     Ok(())
 }
 
