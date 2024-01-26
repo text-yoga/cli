@@ -5,19 +5,23 @@ extern crate intel_mkl_src;
 extern crate accelerate_src;
 
 mod embeddings;
+use std::ffi::OsStr;
+
 use candle_core::Tensor;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use human_panic::setup_panic;
 
+use ignore::WalkBuilder;
 use markdown;
 use thiserror::Error;
+use tokio::{fs::File, io::AsyncReadExt};
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{fmt, Registry};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+struct Cli {
     /// Run on CPU rather than on GPU.
     #[arg(long)]
     cpu: bool,
@@ -25,6 +29,10 @@ struct Args {
     /// Enable tracing (generates a trace-timestamp.json file).
     #[arg(long)]
     tracing: bool,
+
+    /// Input folder to parse.
+    #[arg(long, default_value = ".")]
+    input_folder: String,
 
     /// L2 normalization for embeddings.
     #[arg(long, default_value = "true")]
@@ -35,6 +43,19 @@ struct Args {
 
     #[arg(long)]
     model: Option<String>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// generate embeddings
+    Embed {
+        // /// lists test values
+        // #[arg(short, long)]
+        // list: bool,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -54,8 +75,8 @@ async fn main() -> anyhow::Result<()> {
     // use tracing_chrome::ChromeLayerBuilder;
     use tracing_subscriber::prelude::*;
 
-    let args = Args::parse();
-    let _guard = if args.tracing {
+    let cli = Cli::parse();
+    let _guard = if cli.tracing {
         println!("tracing...");
         let (chrome_layer, guard) = ChromeLayerBuilder::new().build();
         // let subscriber = tracing_subscriber::FmtSubscriber::builder();
@@ -74,16 +95,33 @@ async fn main() -> anyhow::Result<()> {
     } else {
         None
     };
-    let start = std::time::Instant::now();
+    let walk = WalkBuilder::new(cli.input_folder)
+        .hidden(true)
+        .filter_entry(|entry| {
+            entry.path().is_dir()
+                || entry
+                    .path()
+                    .extension()
+                    .and_then(OsStr::to_str)
+                    .map(|extension| extension.eq("md"))
+                    .unwrap_or(false)
+        })
+        .build();
+    let walk = walk.filter_map(|entry| entry.ok().filter(|dir_entry| dir_entry.path().is_file()));
+    for result in walk {
+        let path = result.path();
 
-    println!(
-        "{:?}",
-        markdown::to_mdast("# Hey, *you*!", &markdown::ParseOptions::default())
-            .map_err(ProcessError::InvalidMarkdown)?
-    );
+        let mut f = File::open(path).await?;
+        let mut buffer = String::new();
+        f.read_to_string(&mut buffer).await?;
+
+        let mdast = markdown::to_mdast(buffer.as_str(), &markdown::ParseOptions::default())
+            .map_err(ProcessError::InvalidMarkdown)?;
+        println!("{:?}", mdast);
+    }
 
     let (model, mut tokenizer) =
-        embeddings::build_model_and_tokenizer(args.model, args.tokenizer, args.cpu).await?;
+        embeddings::build_model_and_tokenizer(cli.model, cli.tokenizer, cli.cpu).await?;
 
     let sentences = [
         "The cat sits outside",
@@ -98,8 +136,8 @@ async fn main() -> anyhow::Result<()> {
     .map(String::from)
     .to_vec();
 
-    let result = embeddings::embed(&model, &mut tokenizer, false, sentences);
-    println!("Result: {:#?}", result);
+    // let result = embeddings::embed(&model, &mut tokenizer, false, sentences);
+    // println!("Result: {:#?}", result);
     Ok(())
 }
 
