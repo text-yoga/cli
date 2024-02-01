@@ -13,11 +13,12 @@ use clap::{Parser, Subcommand};
 use human_panic::setup_panic;
 
 use ignore::WalkBuilder;
-use markdown;
+use itertools::Itertools;
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{fmt, Registry};
+mod markdown_parser;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -38,9 +39,15 @@ struct Cli {
     #[arg(long, default_value = "true")]
     normalize_embeddings: bool,
 
+    /// Batch size
+    #[arg(short, long, default_value_t = 10)]
+    batch_size: i32,
+
+    /// Path to the tokenizer file.
     #[arg(long)]
     tokenizer: Option<String>,
 
+    /// Path to the model file.
     #[arg(long)]
     model: Option<String>,
 
@@ -58,10 +65,10 @@ enum Commands {
     },
 }
 
-#[derive(Error, Debug)]
-pub enum ProcessError {
-    #[error("Failed to parse markdown: {0}")]
-    InvalidMarkdown(String),
+#[derive(Debug, Clone)]
+struct MarkdownFile {
+    file_name: String,
+    content: String,
 }
 
 #[tokio::main]
@@ -108,6 +115,8 @@ async fn main() -> anyhow::Result<()> {
         })
         .build();
     let walk = walk.filter_map(|entry| entry.ok().filter(|dir_entry| dir_entry.path().is_file()));
+
+    let mut markdown_files: Vec<MarkdownFile> = vec![];
     for result in walk {
         let path = result.path();
 
@@ -115,28 +124,52 @@ async fn main() -> anyhow::Result<()> {
         let mut buffer = String::new();
         f.read_to_string(&mut buffer).await?;
 
-        let mdast = markdown::to_mdast(buffer.as_str(), &markdown::ParseOptions::default())
-            .map_err(ProcessError::InvalidMarkdown)?;
-        println!("{:?}", mdast);
+        let markdown = buffer.as_str();
+        // let mdast = markdown::to_mdast(markdown, &markdown::ParseOptions::default())
+        //     .map_err(ProcessError::InvalidMarkdown)?;
+        markdown_files.push(MarkdownFile {
+            file_name: path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_owned().to_string())
+                .unwrap_or_default(),
+            content: markdown.to_string(),
+        });
+        // println!("{:?}", mdast);
     }
 
+    let markdown_files = markdown_files
+        .into_iter()
+        .take(30)
+        .collect::<Vec<MarkdownFile>>();
     let (model, mut tokenizer) =
         embeddings::build_model_and_tokenizer(cli.model, cli.tokenizer, cli.cpu).await?;
 
-    let sentences = [
-        "The cat sits outside",
-        "A man is playing guitar",
-        "I love pasta",
-        "The new movie is awesome",
-        "The cat plays in the garden",
-        "A woman watches TV",
-        "The new movie is so great",
-        "Do you like pizza?",
-    ]
-    .map(String::from)
-    .to_vec();
+    let contents = &markdown_files
+        .iter()
+        .map(|md| md.content.clone())
+        .collect_vec();
+    let tokens = tokenizer
+        .encode_batch(contents.clone(), false)
+        .map_err(|err| anyhow::anyhow!("Failed to tokenize batch."));
+    println!(
+        "#files: {:?}",
+        &markdown_files
+            .iter()
+            .map(|f| f.file_name.clone())
+            .collect_vec()
+    );
+    let result: &Vec<(String, usize)> = &markdown_files
+        .clone()
+        .iter()
+        .zip(tokens.iter())
+        .map(|(md, encoding)| (md.file_name.clone(), encoding.len()))
+        .collect_vec();
 
-    // let result = embeddings::embed(&model, &mut tokenizer, false, sentences);
+    println!("Length {:?}", result);
+
+    // .for_each(|s| println!("Got {:?}", s));
+    // let result = embeddings::embed(&model, &mut tokenizer, false, markdown_contents);
     // println!("Result: {:#?}", result);
     Ok(())
 }
