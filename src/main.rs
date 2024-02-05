@@ -151,7 +151,7 @@ async fn main() -> anyhow::Result<()> {
         .collect_vec();
     let tokens = tokenizer
         .encode_batch(contents.clone(), false)
-        .map_err(|err| anyhow::anyhow!("Failed to tokenize batch."));
+        .map_err(|err| anyhow::anyhow!("Failed to tokenize batch."))?;
     println!(
         "#files: {:?}",
         &markdown_files
@@ -159,14 +159,27 @@ async fn main() -> anyhow::Result<()> {
             .map(|f| f.file_name.clone())
             .collect_vec()
     );
-    let result: &Vec<(String, usize)> = &markdown_files
-        .clone()
+
+    const MAX_TOKENS: usize = 8192;
+
+    let result = &markdown_files
         .iter()
         .zip(tokens.iter())
-        .map(|(md, encoding)| (md.file_name.clone(), encoding.len()))
+        .flat_map(move |(md, encoding)| {
+            encoding
+                .get_ids()
+                .to_vec()
+                .chunks(MAX_TOKENS)
+                .into_iter()
+                .map(|res| (md, res.to_vec()))
+                .collect_vec()
+        })
         .collect_vec();
 
-    println!("Length {:?}", result);
+    result
+        .iter()
+        .for_each(|res| println!("{:?} - {:?}", res.0.file_name, res.1.len()));
+    // println!("Length {:?}", result);
 
     // .for_each(|s| println!("Got {:?}", s));
     // let result = embeddings::embed(&model, &mut tokenizer, false, markdown_contents);

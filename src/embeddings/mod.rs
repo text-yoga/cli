@@ -53,7 +53,16 @@ pub async fn build_model_and_tokenizer(
     config.intermediate_size = 2048;
     config.num_attention_heads = 8;
     config.num_hidden_layers = 4;
-    let tokenizer = tokenizers::Tokenizer::from_file(tokenizer).map_err(E::msg)?;
+    let mut tokenizer = tokenizers::Tokenizer::from_file(tokenizer).map_err(E::msg)?;
+    if let Some(pp) = tokenizer.get_padding_mut() {
+        pp.strategy = tokenizers::PaddingStrategy::BatchLongest
+    } else {
+        let pp = tokenizers::PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
+        };
+        tokenizer.with_padding(Some(pp));
+    }
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[model], DType::F32, &device)? };
     println!("Initializing model...");
     let model = BertModel::new(vb, &config)?;
@@ -84,6 +93,10 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
     }
 }
 
+pub(crate) fn tokenize(tokenizer: &mut Tokenizer, sentence: String) -> Vec<u8> {
+    vec![]
+}
+
 pub(crate) fn embed(
     model: &BertModel,
     tokenizer: &mut Tokenizer,
@@ -91,15 +104,6 @@ pub(crate) fn embed(
     sentences: Vec<String>,
 ) -> Result<(Vec<(String, Vec<f32>)>, Vec<(String, candle_core::Error)>), anyhow::Error> {
     let device = &model.device;
-    if let Some(pp) = tokenizer.get_padding_mut() {
-        pp.strategy = tokenizers::PaddingStrategy::BatchLongest
-    } else {
-        let pp = tokenizers::PaddingParams {
-            strategy: tokenizers::PaddingStrategy::BatchLongest,
-            ..Default::default()
-        };
-        tokenizer.with_padding(Some(pp));
-    }
 
     println!("tokenizing texts");
     let tokens = tokenizer
