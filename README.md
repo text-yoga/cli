@@ -1,6 +1,6 @@
 # text.yoga cli
 
-⚠️ WIP - use at your own risk.
+⚠️ WIP - not yet ready for use.
 
 A cli for automatic, hardware-accelerated generation of embeddings for text documents. Currently supports markdown files.
 
