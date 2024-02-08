@@ -19,6 +19,7 @@ use tokio::{fs::File, io::AsyncReadExt};
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{fmt, Registry};
 mod markdown_parser;
+use itertools::Either::{Left, Right};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -160,30 +161,54 @@ async fn main() -> anyhow::Result<()> {
             .collect_vec()
     );
 
-    const MAX_TOKENS: usize = 8192;
+    const NUM_EMBEDDINGS: usize = 8192;
 
-    let result = &markdown_files
+    let files = &markdown_files
         .iter()
         .zip(tokens.iter())
         .flat_map(move |(md, encoding)| {
             encoding
                 .get_ids()
                 .to_vec()
-                .chunks(MAX_TOKENS)
+                .chunks(NUM_EMBEDDINGS)
                 .into_iter()
                 .map(|res| (md, res.to_vec()))
                 .collect_vec()
         })
         .collect_vec();
 
-    result
+    files
         .iter()
         .for_each(|res| println!("{:?} - {:?}", res.0.file_name, res.1.len()));
-    // println!("Length {:?}", result);
 
-    // .for_each(|s| println!("Got {:?}", s));
-    // let result = embeddings::embed(&model, &mut tokenizer, false, markdown_contents);
-    // println!("Result: {:#?}", result);
+    let files = files.iter().take(4).collect_vec();
+    let token_ids_batch = &files.iter().map(|tuple| tuple.1.clone()).collect_vec();
+    let embeddings = embeddings::embed(
+        &model,
+        &mut tokenizer,
+        false,
+        NUM_EMBEDDINGS,
+        token_ids_batch,
+    )?;
+
+    let results = files
+        .iter()
+        .map(move |(file, _)| *file)
+        .zip(embeddings)
+        .collect_vec();
+
+    results.iter().for_each(|result| {
+        let file_name = (*result.0).file_name.clone();
+        match &result.1 {
+            Left(embedding) => {
+                let first_ten = embedding.1.iter().take(10).collect_vec();
+                println!("{:} {:?}", file_name, first_ten)
+            }
+            Right(err) => {
+                println!("{:} failed", file_name)
+            }
+        }
+    });
     Ok(())
 }
 

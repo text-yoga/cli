@@ -100,23 +100,37 @@ pub(crate) fn embed(
     model: &BertModel,
     tokenizer: &mut Tokenizer,
     normalize_embeddings: bool,
-    sentences: Vec<String>,
-) -> Result<(Vec<(String, Vec<f32>)>, Vec<(String, candle_core::Error)>), anyhow::Error> {
+    n_embeddings: usize,
+    tokens_ids_batch: &Vec<Vec<u32>>,
+) -> Result<Vec<Either<(Vec<u32>, Vec<f32>), (Vec<u32>, candle_core::Error)>>, anyhow::Error> {
     let device = &model.device;
 
-    println!("tokenizing texts");
-    let tokens = tokenizer
-        .encode_batch(sentences.clone(), true)
-        .map_err(E::msg)?;
-    let token_ids = tokens
+    let token_ids_batch_tensor = &tokens_ids_batch
         .iter()
-        .map(|tokens| {
-            let tokens = tokens.get_ids().to_vec();
-            Tensor::new(tokens.as_slice(), device)
+        .map(|token_ids| {
+            let size = *(&token_ids.len());
+            if size < n_embeddings {
+                if let Some(padding) = tokenizer.get_padding() {
+                    let n_padding = n_embeddings - size;
+                    let padding_id = padding.pad_id;
+                    let mut paddings = vec![padding_id; n_padding];
+                    let mut token_ids = &mut token_ids.clone();
+                    token_ids.append(&mut paddings);
+                    return Tensor::new(token_ids.as_slice(), device);
+                }
+            }
+
+            let tensor = Tensor::new(token_ids.as_slice(), device)?;
+
+            Ok(tensor)
         })
         .collect::<candle_core::Result<Vec<_>>>()?;
 
-    let token_ids = Tensor::stack(&token_ids, 0)?;
+    &token_ids_batch_tensor
+        .iter()
+        .for_each(|t| println!("{:?}", &t.dims()));
+
+    let token_ids = Tensor::stack(&token_ids_batch_tensor.as_slice(), 0)?;
     println!("running inference on batch {:?}", token_ids.shape());
     let embeddings = model.forward(&token_ids)?;
     println!("generated embeddings {:?}", embeddings.shape());
@@ -130,19 +144,21 @@ pub(crate) fn embed(
     };
     println!("pooled embeddings {:?}", embeddings.shape());
 
-    let result: (Vec<(String, Vec<f32>)>, Vec<(String, candle_core::Error)>) = sentences
-        .into_iter()
-        .map(|s| s.clone())
-        .enumerate()
-        .partition_map(|(i, sentence)| {
-            match embeddings
-                .get(i)
-                .and_then(|embedding| embedding.to_vec1::<f32>())
-            {
-                Ok(embedding) => Either::Left((sentence, embedding)),
-                Err(err) => Either::Right((sentence, err)),
-            }
-        });
+    let result: Vec<Either<(Vec<u32>, Vec<f32>), (Vec<u32>, candle_core::Error)>> =
+        tokens_ids_batch
+            .into_iter()
+            .map(|s| s.clone())
+            .enumerate()
+            .map(|(i, sentence)| {
+                match embeddings
+                    .get(i)
+                    .and_then(|embedding| embedding.to_vec1::<f32>())
+                {
+                    Ok(embedding) => Either::Left((sentence, embedding)),
+                    Err(err) => Either::Right((sentence, err)),
+                }
+            })
+            .collect_vec();
     Ok(result)
 }
 
