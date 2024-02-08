@@ -8,7 +8,7 @@ A cli for automatic generation of embeddings for text documents.
 ## Features
 
 - 100% Rust - No python required
-- Hardware-accelerated (using [candle](https://github.com/huggingface/candle)
+- Hardware-accelerated (uses [candle](https://github.com/huggingface/candle))
 - Supported models
     - jinaai/jina-embeddings-v2-small-en
 - Supported file types
@@ -19,3 +19,8 @@ A cli for automatic generation of embeddings for text documents.
 ```
 cargo run --features metal --release -- --input-folder=<folder-with-markdown-files>
 ```
+
+
+## License
+
+Licensed under [MIT](./LICENSE).
