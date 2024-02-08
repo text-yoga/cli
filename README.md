@@ -2,7 +2,17 @@
 
 ⚠️ WIP - not yet ready for use.
 
-A cli for automatic, hardware-accelerated generation of embeddings for text documents. Currently supports markdown files.
+A cli for automatic generation of embeddings for text documents.
+
+
+## Features
+
+- 100% Rust - No python required
+- Hardware-accelerated (using [candle](https://github.com/huggingface/candle)
+- Supported models
+    - jinaai/jina-embeddings-v2-small-en
+- Supported file types
+    - markdown
 
 ## Usage
 

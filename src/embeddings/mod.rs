@@ -4,17 +4,16 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
-pub mod jina_bert;
 use anyhow::Error as E;
 use candle_core::{
     utils::{cuda_is_available, metal_is_available},
     DType, Device, Module, Tensor,
 };
 use candle_nn::VarBuilder;
+use candle_transformers::models::jina_bert::BertModel;
+use candle_transformers::models::jina_bert::Config;
 use hf_hub::api::tokio::ApiBuilder;
 use itertools::{Either, Itertools};
-use jina_bert::BertModel;
-use jina_bert::Config;
 use tokenizers::Tokenizer;
 
 pub async fn build_model_and_tokenizer(
