@@ -102,7 +102,7 @@ pub(crate) fn embed(
     normalize_embeddings: bool,
     n_embeddings: usize,
     tokens_ids_batch: &Vec<Vec<u32>>,
-) -> Result<Vec<Either<(Vec<u32>, Vec<f32>), (Vec<u32>, candle_core::Error)>>, anyhow::Error> {
+) -> Result<Vec<Result<Vec<f32>, candle_core::Error>>, anyhow::Error> {
     let device = &model.device;
 
     let token_ids_batch_tensor = &tokens_ids_batch
@@ -144,21 +144,16 @@ pub(crate) fn embed(
     };
     println!("pooled embeddings {:?}", embeddings.shape());
 
-    let result: Vec<Either<(Vec<u32>, Vec<f32>), (Vec<u32>, candle_core::Error)>> =
-        tokens_ids_batch
-            .into_iter()
-            .map(|s| s.clone())
-            .enumerate()
-            .map(|(i, sentence)| {
-                match embeddings
-                    .get(i)
-                    .and_then(|embedding| embedding.to_vec1::<f32>())
-                {
-                    Ok(embedding) => Either::Left((sentence, embedding)),
-                    Err(err) => Either::Right((sentence, err)),
-                }
-            })
-            .collect_vec();
+    let result: Vec<Result<Vec<f32>, candle_core::Error>> = tokens_ids_batch
+        .into_iter()
+        .map(|s| s.clone())
+        .enumerate()
+        .map(|(i, sentence)| {
+            embeddings
+                .get(i)
+                .and_then(|embedding| embedding.to_vec1::<f32>())
+        })
+        .collect_vec();
     Ok(result)
 }
 

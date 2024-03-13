@@ -181,34 +181,45 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .for_each(|res| println!("{:?} - {:?}", res.0.file_name, res.1.len()));
 
-    let files = files.iter().take(4).collect_vec();
-    let token_ids_batch = &files.iter().map(|tuple| tuple.1.clone()).collect_vec();
-    let embeddings = embeddings::embed(
-        &model,
-        &mut tokenizer,
-        false,
-        NUM_EMBEDDINGS,
-        token_ids_batch,
-    )?;
+    // let files = files.iter().take(4).collect_vec();
+    let chunk_size = 4;
+    let files_in_chunks = &files.chunks(chunk_size).collect_vec();
 
-    let results = files
+    let embeddings_batch = files_in_chunks
         .iter()
-        .map(move |(file, _)| *file)
-        .zip(embeddings)
+        .map(move |token_ids_batch| {
+            let embeddings = (*token_ids_batch)
+                .into_iter()
+                .map(|(_, embedding)| (*embedding).clone())
+                .collect_vec();
+
+            let embedding_result =
+                embeddings::embed(&model, &mut tokenizer, false, NUM_EMBEDDINGS, &embeddings)?;
+
+            let markdown_files = (*token_ids_batch)
+                .into_iter()
+                .map(|(file, _)| (*file).clone())
+                .collect_vec();
+            let result = markdown_files
+                .into_iter()
+                .zip(embedding_result)
+                .collect_vec();
+            Ok::<Vec<(MarkdownFile, Result<Vec<f32>, candle_core::Error>)>, anyhow::Error>(result)
+        })
+        .flatten()
         .collect_vec();
 
-    results.iter().for_each(|result| {
-        let file_name = (*result.0).file_name.clone();
-        match &result.1 {
-            Left(embedding) => {
-                let first_ten = embedding.1.iter().take(10).collect_vec();
-                println!("{:} {:?}", file_name, first_ten)
+    embeddings_batch.iter().flatten().for_each(
+        |(file, embeddings_result)| match &embeddings_result {
+            Ok(embeddings) => {
+                let first_ten = embeddings.iter().take(10).collect_vec();
+                println!("{} {:?}", file.file_name, first_ten)
             }
-            Right(err) => {
-                println!("{:} failed", file_name)
+            Err(err) => {
+                println!("{} failed", file.file_name.as_str())
             }
-        }
-    });
+        },
+    );
     Ok(())
 }
 
